@@ -1,4 +1,4 @@
-// code.js - Fixed Figma Plugin Code
+// code.js - Plugin with shell script execution
 figma.showUI(__html__, { width: 400, height: 420 });
 
 async function exportCollections() {

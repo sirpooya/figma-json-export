@@ -197,6 +197,143 @@
     const retryBtn = document.getElementById('retry-btn');
     
     let exportData = null;
+    let config = null;
+
+    // Load config file
+    async function loadConfig() {
+      try {
+        const response = await fetch('./config.json');
+        if (!response.ok) {
+          throw new Error('Config file not found');
+        }
+        config = await response.json();
+        console.log('Config loaded:', config);
+        
+        // Validate and normalize config
+        if (config.autoSave && config.outputPath) {
+          // Basic path validation for macOS/Unix paths
+          if (config.outputPath.startsWith('/')) {
+            // If outputPath is a directory, append the filename
+            if (!config.outputPath.endsWith('.json')) {
+              const directory = config.outputPath.endsWith('/') ? config.outputPath : config.outputPath + '/';
+              config.fullPath = directory + (config.filename || 'figma-export.json');
+            } else {
+              config.fullPath = config.outputPath;
+            }
+            console.log('Full path will be:', config.fullPath);
+          } else {
+            console.warn('Invalid path in config, will prompt for save location');
+            config.outputPath = null; // This will trigger save dialog
+          }
+        }
+      } catch (error) {
+        console.error('Could not load config.json:', error);
+        config = { 
+          autoSave: false,
+          outputPath: null,
+          filename: 'figma-export.json'
+        }; // Fallback to manual download
+      }
+    }
+
+    // Auto-save to configured path (macOS only)
+    async function autoSaveFile(data) {
+      if (!config || !config.autoSave) {
+        return false;
+      }
+
+      try {
+        const jsonString = JSON.stringify(data, null, 2);
+        
+        // Use the File System Access API if available (Chrome/Edge)
+        if ('showSaveFilePicker' in window) {
+          let fileHandle;
+          
+          // Check if we have a valid configured path
+          if (config.fullPath || config.outputPath) {
+            try {
+              // Try to use the configured path as starting directory
+              const pathToUse = config.fullPath || config.outputPath;
+              const pathParts = pathToUse.split('/');
+              const filename = pathParts.pop() || config.filename || 'figma-export.json';
+              
+              // If the path looks like a directory, use it as startIn
+              const isDirectory = !config.outputPath.includes('.json');
+              
+              if (isDirectory) {
+                // Try to save directly with the configured directory and filename
+                fileHandle = await window.showSaveFilePicker({
+                  suggestedName: config.filename || 'figma-export.json',
+                  startIn: 'documents', // Start in Documents, user can navigate to Dropbox
+                  types: [{
+                    description: 'JSON files',
+                    accept: { 'application/json': ['.json'] }
+                  }]
+                });
+              } else {
+                // Use the full path
+                fileHandle = await window.showSaveFilePicker({
+                  suggestedName: filename,
+                  startIn: 'documents',
+                  types: [{
+                    description: 'JSON files',
+                    accept: { 'application/json': ['.json'] }
+                  }]
+                });
+              }
+            } catch (pathError) {
+              console.log('Configured path not accessible, showing save dialog');
+              // Fall through to regular save dialog
+              fileHandle = await window.showSaveFilePicker({
+                suggestedName: config.filename || 'figma-export.json',
+                startIn: 'documents',
+                types: [{
+                  description: 'JSON files',
+                  accept: { 'application/json': ['.json'] }
+                }]
+              });
+            }
+          } else {
+            // No configured path, show save dialog
+            fileHandle = await window.showSaveFilePicker({
+              suggestedName: config.filename || 'figma-export.json',
+              startIn: 'documents',
+              types: [{
+                description: 'JSON files',
+                accept: { 'application/json': ['.json'] }
+              }]
+            });
+          }
+          
+          const writable = await fileHandle.createWritable();
+          await writable.write(jsonString);
+          await writable.close();
+          
+          return true;
+        } else {
+          // Fallback: trigger download with configured filename
+          const blob = new Blob([jsonString], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = url;
+          a.setAttribute('download', config.filename || 'figma-export.json');
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          return true;
+        }
+      } catch (error) {
+        console.error('Auto-save failed:', error);
+        return false;
+      }
+    }
+
+    // Initialize config on load
+    loadConfig();
 
     // Handle messages from plugin code
     window.onmessage = (event) => {
@@ -284,6 +421,25 @@
       // Display JSON in pre element
       const jsonString = JSON.stringify(data, null, 2);
       jsonDisplay.textContent = jsonString;
+
+      // Try auto-save if configured
+      if (config && config.autoSave) {
+        autoSaveFile(data).then(success => {
+          if (success) {
+            // Update button text to indicate auto-save worked
+            if (config.outputPath) {
+              downloadBtn.textContent = 'File Auto-Saved ✓';
+              downloadBtn.style.background = '#4caf50';
+            } else {
+              downloadBtn.textContent = 'File Saved via Dialog ✓';
+              downloadBtn.style.background = '#4caf50';
+            }
+          } else {
+            downloadBtn.textContent = 'Auto-Save Failed - Click to Download';
+            downloadBtn.style.background = '#ff9800';
+          }
+        });
+      }
     }
 
     function showError(message) {
@@ -301,13 +457,14 @@
     function downloadJSON() {
       if (!exportData) return;
       
+      const filename = (config && config.filename) ? config.filename : 'figma-export.json';
       const jsonString = JSON.stringify(exportData, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       
       const a = document.createElement('a');
       a.href = url;
-      a.setAttribute('download', 'figma-export.json');
+      a.setAttribute('download', filename);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
