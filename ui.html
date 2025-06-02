@@ -160,11 +160,11 @@
       <span id="collection-count"></span>
     </div>
     
-    <pre id="json-display" class="json-display">Processing variables...</pre>
+    <pre id="json-display" class="json-display">Processing variables and styles...</pre>
     
     <div id="loading-status" class="status loading">
       <strong>Loading...</strong><br>
-      Reading collections and variables from your file.
+      Reading variables and styles from your file.
     </div>
     
     <button id="copy-btn" class="button secondary no-margin">Copy to Clipboard</button>
@@ -204,7 +204,7 @@
       
       switch (msg.type) {
         case 'export-ready':
-          showSuccess(msg.data);
+          showSuccess(msg.data, msg.counts);
           break;
         case 'no-collections':
           showError(msg.message);
@@ -215,7 +215,7 @@
       }
     };
 
-    function showSuccess(data) {
+    function showSuccess(data, counts) {
       exportData = data;
       
       loadingStatus.classList.add('hidden');
@@ -224,25 +224,64 @@
       downloadBtn.classList.remove('hidden');
       retryBtn.classList.add('hidden');
       
-      // Count variables
+      // Use counts from the message if provided, otherwise count manually
       let variableCount = 0;
-      function countVariables(obj) {
-        for (const key in obj) {
-          if (obj[key] && typeof obj[key] === 'object') {
-            if (obj[key]['$type'] && obj[key]['$value'] !== undefined) {
-              variableCount++;
-            } else {
-              countVariables(obj[key]);
+      let colorStyleCount = 0;
+      let textStyleCount = 0;
+      let effectStyleCount = 0;
+      
+      if (counts) {
+        variableCount = counts.variables || 0;
+        colorStyleCount = counts.colorStyles || 0;
+        textStyleCount = counts.textStyles || 0;
+        effectStyleCount = counts.effectStyles || 0;
+      } else {
+        // Fallback: count manually
+        function countVariables(obj) {
+          for (const key in obj) {
+            if (obj[key] && typeof obj[key] === 'object') {
+              if (obj[key]['$type'] && obj[key]['$value'] !== undefined) {
+                variableCount++;
+              } else if (key !== 'colorStyles' && key !== 'textStyles' && key !== 'effectStyles') {
+                countVariables(obj[key]);
+              }
             }
           }
         }
+        
+        countVariables(data);
+        
+        // Count styles
+        if (data.colorStyles) {
+          function countInStyles(obj) {
+            let count = 0;
+            for (const key in obj) {
+              if (obj[key] && typeof obj[key] === 'object') {
+                if (obj[key]['$type']) {
+                  count++;
+                } else {
+                  count += countInStyles(obj[key]);
+                }
+              }
+            }
+            return count;
+          }
+          colorStyleCount = countInStyles(data.colorStyles);
+        }
+        
+        if (data.textStyles) {
+          textStyleCount = countInStyles(data.textStyles);
+        }
+        
+        if (data.effectStyles) {
+          effectStyleCount = countInStyles(data.effectStyles);
+        }
       }
       
-      countVariables(data);
+      const totalCount = variableCount + colorStyleCount + textStyleCount + effectStyleCount;
+      collectionCount.textContent = `Found: ${variableCount} variables, ${textStyleCount} texts, ${colorStyleCount} colors, ${effectStyleCount} effects.`;
       
-      collectionCount.textContent = `Found ${variableCount} variable(s) ready for export.`;
-      
-      // Display JSON in pre element (no character limits)
+      // Display JSON in pre element
       const jsonString = JSON.stringify(data, null, 2);
       jsonDisplay.textContent = jsonString;
     }
@@ -268,7 +307,7 @@
       
       const a = document.createElement('a');
       a.href = url;
-      a.setAttribute('download', 'json-export.json');
+      a.setAttribute('download', 'figma-export.json');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -283,7 +322,7 @@
       retryBtn.classList.add('hidden');
       
       // Reset display to loading state
-      jsonDisplay.textContent = 'Processing variables...';
+      jsonDisplay.textContent = 'Processing variables and styles...';
       
       parent.postMessage({ 
         pluginMessage: { type: 'export-collections' } 

@@ -1,189 +1,201 @@
-// code.ts - Main plugin code
+// code.js - Fixed Figma Plugin Code
 figma.showUI(__html__, { width: 400, height: 420 });
 
 async function exportCollections() {
   try {
-    // Get all local variable collections
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const exportData = {};
+    let variableCount = 0;
+    let colorStyleCount = 0;
+    let textStyleCount = 0;
+    let effectStyleCount = 0;
+
+    // Check if variables API is available
+    let collections = [];
+    try {
+      if (figma.variables && figma.variables.getLocalVariableCollectionsAsync) {
+        collections = await figma.variables.getLocalVariableCollectionsAsync();
+      }
+    } catch (variableError) {
+      console.error('Error getting variable collections:', variableError);
+    }
+
+    // Get styles (these should always be available)
+    const colorStyles = figma.getLocalPaintStyles();
+    const textStyles = figma.getLocalTextStyles();
+    const effectStyles = figma.getLocalEffectStyles();
     
-    // Notify user about number of collections found
-    figma.notify(`Found ${collections.length} local collection(s)`);
+    colorStyleCount = colorStyles.length;
+    textStyleCount = textStyles.length;
+    effectStyleCount = effectStyles.length;
     
-    if (collections.length === 0) {
+    // Process variables (if available)
+    if (collections.length > 0) {
+      try {
+        const allVariables = await figma.variables.getLocalVariablesAsync();
+        
+        for (const collection of collections) {
+          const collectionVariables = allVariables.filter(variable => 
+            variable.variableCollectionId === collection.id
+          );
+          
+          for (const variable of collectionVariables) {
+            variableCount++;
+            for (const mode of collection.modes) {
+              const value = variable.valuesByMode[mode.modeId];
+              if (value !== undefined) {
+                const pathParts = variable.name.split('/');
+                
+                let current = mode.name === "Mode 1" ? exportData : (exportData[mode.name] = exportData[mode.name] || {});
+                
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                  current[pathParts[i]] = current[pathParts[i]] || {};
+                  current = current[pathParts[i]];
+                }
+                
+                const finalKey = pathParts[pathParts.length - 1];
+                current[finalKey] = {
+                  "$type": getVariableType(variable.resolvedType),
+                  "$value": resolveVariableValue(value, variable.name)
+                };
+              }
+            }
+          }
+        }
+      } catch (variableProcessError) {
+        console.error('Error processing variables:', variableProcessError);
+      }
+    }
+
+    // Process color styles
+    if (colorStyles.length > 0) {
+      exportData.colorStyles = {};
+      
+      colorStyles.forEach(style => {
+        const pathParts = style.name.split('/');
+        let current = exportData.colorStyles;
+        
+        for (let i = 0; i < pathParts.length - 1; i++) {
+          current[pathParts[i]] = current[pathParts[i]] || {};
+          current = current[pathParts[i]];
+        }
+        
+        const finalKey = pathParts[pathParts.length - 1];
+        const paint = style.paints[0];
+        
+        if (paint && paint.type === 'SOLID') {
+          const r = Math.round(paint.color.r * 255);
+          const g = Math.round(paint.color.g * 255);
+          const b = Math.round(paint.color.b * 255);
+          const a = paint.opacity !== undefined ? paint.opacity : 1;
+          
+          current[finalKey] = {
+            "$type": "color",
+            "$value": a === 1 ? 
+              `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
+              `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`
+          };
+        }
+      });
+    }
+
+    // Process text styles
+    if (textStyles.length > 0) {
+      exportData.textStyles = {};
+      
+      textStyles.forEach(style => {
+        const pathParts = style.name.split('/');
+        let current = exportData.textStyles;
+        
+        for (let i = 0; i < pathParts.length - 1; i++) {
+          current[pathParts[i]] = current[pathParts[i]] || {};
+          current = current[pathParts[i]];
+        }
+        
+        const finalKey = pathParts[pathParts.length - 1];
+        current[finalKey] = {
+          "$type": "typography",
+          "$value": {
+            "fontFamily": style.fontName.family,
+            "fontWeight": style.fontName.style,
+            "fontSize": style.fontSize
+          }
+        };
+      });
+    }
+
+    // Process effect styles
+    if (effectStyles.length > 0) {
+      exportData.effectStyles = {};
+      
+      effectStyles.forEach(style => {
+        const pathParts = style.name.split('/');
+        let current = exportData.effectStyles;
+        
+        for (let i = 0; i < pathParts.length - 1; i++) {
+          current[pathParts[i]] = current[pathParts[i]] || {};
+          current = current[pathParts[i]];
+        }
+        
+        const finalKey = pathParts[pathParts.length - 1];
+        
+        // Process actual effects instead of placeholder
+        const effects = style.effects;
+        if (effects && effects.length > 0) {
+          const effect = effects[0]; // Take first effect
+          if (effect.type === 'DROP_SHADOW' || effect.type === 'INNER_SHADOW') {
+            current[finalKey] = {
+              "$type": "shadow",
+              "$value": {
+                "color": `rgba(${Math.round(effect.color.r * 255)}, ${Math.round(effect.color.g * 255)}, ${Math.round(effect.color.b * 255)}, ${effect.color.a})`,
+                "offsetX": `${effect.offset.x}px`,
+                "offsetY": `${effect.offset.y}px`,
+                "blur": `${effect.radius}px`,
+                "spread": `${effect.spread || 0}px`
+              }
+            };
+          } else {
+            current[finalKey] = {
+              "$type": "shadow",
+              "$value": "effect-placeholder"
+            };
+          }
+        }
+      });
+    }
+
+    // Send to UI
+    const totalItems = variableCount + colorStyleCount + textStyleCount + effectStyleCount;
+    
+    if (totalItems === 0) {
+      figma.notify('No variables or styles found to export');
       figma.ui.postMessage({ 
         type: 'no-collections',
-        message: 'No local collections found in this file.' 
+        message: 'No variables or styles found in this file.' 
       });
       return;
     }
 
-    const exportData = {};
-    const orderedData = {};
-
-    // Process each collection in order
-    for (const collection of collections) {
-      // Get variables for this collection
-      const allVariables = await figma.variables.getLocalVariablesAsync();
-      const collectionVariables = allVariables.filter(variable => 
-        variable.variableCollectionId === collection.id
-      );
-
-      // Process each variable
-      for (const variable of collectionVariables) {
-        // Process modes in their original order
-        for (const mode of collection.modes) {
-          const value = variable.valuesByMode[mode.modeId];
-          if (value !== undefined) {
-            // Parse variable name path
-            const pathParts = variable.name.split('/');
-            
-            let current;
-            
-            // If mode is "Mode 1", shift everything up one level
-            if (mode.name === "Mode 1") {
-              current = exportData;
-            } else {
-              // For other modes, keep the mode wrapper
-              if (!exportData[mode.name]) {
-                exportData[mode.name] = {};
-              }
-              current = exportData[mode.name];
-            }
-            
-            // Create nested structure
-            for (let i = 0; i < pathParts.length - 1; i++) {
-              if (!current[pathParts[i]]) {
-                current[pathParts[i]] = {};
-              }
-              current = current[pathParts[i]];
-            }
-            
-            // Set the final variable with $type and $value
-            const finalKey = pathParts[pathParts.length - 1];
-            current[finalKey] = {
-              "$type": getVariableType(variable.resolvedType),
-              "$value": resolveVariableValue(value, variable.name)
-            };
-          }
-        }
-      }
-    }
-
-    // Sort all keys with second digit priority before sending
-    const sortedData = sortObjectKeysRecursively(exportData);
+    figma.notify(`Export ready: ${totalItems} items found`);
     
-    // Send data to UI for display and download
     figma.ui.postMessage({
       type: 'export-ready',
-      data: sortedData
+      data: exportData,
+      counts: {
+        variables: variableCount,
+        colorStyles: colorStyleCount,
+        textStyles: textStyleCount,
+        effectStyles: effectStyleCount
+      }
     });
 
   } catch (error) {
-    figma.notify(`Error: ${error.message}`, { error: true });
     console.error('Export error:', error);
-  }
-}
-
-// Helper function to sort object keys recursively with second digit priority
-function sortObjectKeysRecursively(obj) {
-  if (Array.isArray(obj)) {
-    return obj.map(sortObjectKeysRecursively);
-  } else if (obj !== null && typeof obj === 'object') {
-    // Get all keys and sort them with second digit priority
-    const keys = Object.keys(obj).sort((a, b) => {
-      // Check if both keys are purely numeric strings
-      const aIsNumeric = /^\d+$/.test(a);
-      const bIsNumeric = /^\d+$/.test(b);
-      
-      if (aIsNumeric && bIsNumeric) {
-        // Get second digit (or 0 if string has only 1 digit)
-        const aSecondDigit = a.length > 1 ? parseInt(a[1], 10) : 0;
-        const bSecondDigit = b.length > 1 ? parseInt(b[1], 10) : 0;
-        
-        // First priority: second digit (0 comes before 1, etc.)
-        if (aSecondDigit !== bSecondDigit) {
-          return aSecondDigit - bSecondDigit;
-        }
-        
-        // If second digits are same, sort by full numeric value
-        const aNum = parseInt(a, 10);
-        const bNum = parseInt(b, 10);
-        return aNum - bNum;
-      }
-      
-      // For non-numeric keys, use standard alphabetical sort
-      return a.localeCompare(b, undefined, {
-        numeric: true,
-        sensitivity: 'base'
-      });
+    figma.notify(`Export failed: ${error.message}`, { error: true });
+    figma.ui.postMessage({
+      type: 'error',
+      message: `Export failed: ${error.message}`
     });
-    
-    // Use Object.fromEntries to maintain key order
-    return Object.fromEntries(
-      keys.map(key => [key, sortObjectKeysRecursively(obj[key])])
-    );
   }
-  
-  return obj;
-}
-
-// Helper function to sort JSON object keys with leading zeros FIRST
-// ONLY sorts pure numeric keys like "02", "04", "12"
-function sortJsonKeysNumerically(obj) {
-  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
-    return obj;
-  }
-
-  const sortedObj = {};
-  
-  // Get all keys and sort them
-  const keys = Object.keys(obj);
-  
-  // Simple sorting function focused ONLY on pure numeric keys
-  keys.sort((a, b) => {
-    // Check if both keys are PURE numeric strings (only digits)
-    const aIsPureNumeric = /^\d+$/.test(a);
-    const bIsPureNumeric = /^\d+$/.test(b);
-    
-    // If both are pure numeric, apply special sorting
-    if (aIsPureNumeric && bIsPureNumeric) {
-      // Check for leading zeros (multi-digit starting with 0)
-      const aHasLeadingZero = a.length > 1 && a.charAt(0) === '0';
-      const bHasLeadingZero = b.length > 1 && b.charAt(0) === '0';
-      
-      // Leading zero keys come FIRST
-      if (aHasLeadingZero && !bHasLeadingZero) {
-        return -1; // a comes before b
-      }
-      if (!aHasLeadingZero && bHasLeadingZero) {
-        return 1; // b comes before a
-      }
-      
-      // Both have leading zeros OR both don't have leading zeros
-      // Sort by actual numeric value
-      const aValue = parseInt(a, 10);
-      const bValue = parseInt(b, 10);
-      return aValue - bValue;
-    }
-    
-    // If only one is pure numeric, numeric comes first
-    if (aIsPureNumeric && !bIsPureNumeric) {
-      return -1;
-    }
-    if (!aIsPureNumeric && bIsPureNumeric) {
-      return 1;
-    }
-    
-    // Both are non-numeric, sort alphabetically
-    return a.localeCompare(b);
-  });
-  
-  // Build new object with sorted keys and recursively sort nested objects
-  keys.forEach(key => {
-    sortedObj[key] = sortJsonKeysNumerically(obj[key]);
-  });
-  
-  return sortedObj;
 }
 
 // Helper function to convert Figma variable types to design token types
@@ -206,23 +218,19 @@ function getVariableType(figmaType) {
 function resolveVariableValue(value, variableName) {
   if (typeof value === 'object' && value !== null) {
     if (value.type === 'VARIABLE_ALIAS') {
-      // Convert variable ID reference to token reference format
       return `{${variableName}}`;
     }
     
-    // Handle color values
     if (value.r !== undefined && value.g !== undefined && value.b !== undefined) {
       const r = Math.round(value.r * 255);
       const g = Math.round(value.g * 255);
       const b = Math.round(value.b * 255);
       const a = value.a !== undefined ? value.a : 1;
       
-      // If alpha is 1 (fully opaque), return hex format
       if (a === 1) {
         const toHex = (n) => n.toString(16).padStart(2, '0');
         return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
       } else {
-        // If alpha is not 1, return rgba format with 2 decimal places
         const roundedAlpha = Math.round(a * 100) / 100;
         return `rgba(${r},${g},${b},${roundedAlpha})`;
       }
