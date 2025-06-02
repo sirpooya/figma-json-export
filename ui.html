@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Export Collections to JSON</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+      background: #ffffff;
+    }
+    
+    .container {
+      max-width: 100%;
+    }
+    
+    h1 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+    
+    .description {
+      margin-bottom: 20px;
+      color: #666;
+      font-size: 13px;
+    }
+    
+    .status {
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    
+    .status.loading {
+      background: #e3f2fd;
+      color: #1976d2;
+      border: 1px solid #bbdefb;
+    }
+    
+    .status.success {
+      background: #e8f5e8;
+      color: #2e7d32;
+      border: 1px solid #c8e6c9;
+    }
+    
+    .status.error {
+      background: #ffebee;
+      color: #c62828;
+      border: 1px solid #ffcdd2;
+    }
+    
+    .button {
+      background: #0d99ff;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    
+    .button:hover {
+      background: #0066cc;
+    }
+    
+    .button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .button.secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .button.secondary:hover {
+      background: #e0e0e0;
+    }
+    
+    .button.no-margin {
+      margin-bottom: 0;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .json-output {
+      margin-bottom: 0;
+    }
+    
+    .json-output h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .json-display {
+      width: 100%;
+      height: 200px;
+      padding: 8px;
+      border: 2px solid #0d99ff;
+      border-radius: 4px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      background: #ffffff;
+      color: #24292e;
+      margin-bottom: 16px;
+      box-sizing: border-box;
+      display: block;
+      overflow: auto;
+      white-space: pre;
+      user-select: all;
+    }
+    
+    .json-display:focus {
+      outline: none;
+      border-color: #0d99ff;
+      box-shadow: 0 0 0 2px rgba(13, 153, 255, 0.1);
+    }
+    
+    .json-textarea:focus {
+      outline: none;
+      border-color: #0d99ff;
+      box-shadow: 0 0 0 2px rgba(13, 153, 255, 0.1);
+    }
+    
+    .export-info {
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    
+    .export-info strong {
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="success-status" class="status success hidden">
+      <strong>Ready to export!</strong><br>
+      <span id="collection-count"></span>
+    </div>
+    
+    <pre id="json-display" class="json-display">Processing variables...</pre>
+    
+    <div id="loading-status" class="status loading">
+      <strong>Loading...</strong><br>
+      Reading collections and variables from your file.
+    </div>
+    
+    <button id="copy-btn" class="button secondary no-margin">Copy to Clipboard</button>
+
+    <div style="margin-bottom: 12px;"></div>
+
+    <div id="error-status" class="status error hidden">
+      <strong>Error:</strong><br>
+      <span id="error-message"></span>
+    </div>
+    
+    <button id="download-btn" class="button hidden no-margin">
+      Download JSON File
+    </button>
+    
+    <button id="retry-btn" class="button hidden">
+      Retry Export
+    </button>
+  </div>
+
+  <script>
+    const loadingStatus = document.getElementById('loading-status');
+    const successStatus = document.getElementById('success-status');
+    const errorStatus = document.getElementById('error-status');
+    const jsonDisplay = document.getElementById('json-display');
+    const collectionCount = document.getElementById('collection-count');
+    const errorMessage = document.getElementById('error-message');
+    const downloadBtn = document.getElementById('download-btn');
+    const copyBtn = document.getElementById('copy-btn');
+    const retryBtn = document.getElementById('retry-btn');
+    
+    let exportData = null;
+
+    // Handle messages from plugin code
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      
+      switch (msg.type) {
+        case 'export-ready':
+          showSuccess(msg.data);
+          break;
+        case 'no-collections':
+          showError(msg.message);
+          break;
+        case 'error':
+          showError(msg.message);
+          break;
+      }
+    };
+
+    function showSuccess(data) {
+      exportData = data;
+      
+      loadingStatus.classList.add('hidden');
+      errorStatus.classList.add('hidden');
+      successStatus.classList.remove('hidden');
+      downloadBtn.classList.remove('hidden');
+      retryBtn.classList.add('hidden');
+      
+      // Count variables
+      let variableCount = 0;
+      function countVariables(obj) {
+        for (const key in obj) {
+          if (obj[key] && typeof obj[key] === 'object') {
+            if (obj[key]['$type'] && obj[key]['$value'] !== undefined) {
+              variableCount++;
+            } else {
+              countVariables(obj[key]);
+            }
+          }
+        }
+      }
+      
+      countVariables(data);
+      
+      collectionCount.textContent = `Found ${variableCount} variable(s) ready for export.`;
+      
+      // Display JSON in pre element (no character limits)
+      const jsonString = JSON.stringify(data, null, 2);
+      jsonDisplay.textContent = jsonString;
+    }
+
+    function showError(message) {
+      loadingStatus.classList.add('hidden');
+      successStatus.classList.add('hidden');
+      downloadBtn.classList.add('hidden');
+      errorStatus.classList.remove('hidden');
+      retryBtn.classList.remove('hidden');
+      
+      // Show error in pre element
+      jsonDisplay.textContent = `Error: ${message}`;
+      errorMessage.textContent = message;
+    }
+
+    function downloadJSON() {
+      if (!exportData) return;
+      
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.setAttribute('download', 'json-export.json');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function retryExport() {
+      loadingStatus.classList.remove('hidden');
+      errorStatus.classList.add('hidden');
+      successStatus.classList.add('hidden');
+      downloadBtn.classList.add('hidden');
+      retryBtn.classList.add('hidden');
+      
+      // Reset display to loading state
+      jsonDisplay.textContent = 'Processing variables...';
+      
+      parent.postMessage({ 
+        pluginMessage: { type: 'export-collections' } 
+      }, '*');
+    }
+
+    function copyToClipboard() {
+      // Select all text in the pre element
+      const range = document.createRange();
+      range.selectNodeContents(jsonDisplay);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      try {
+        document.execCommand('copy');
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy to Clipboard';
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy: ', err);
+        copyBtn.textContent = 'Copy Failed';
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy to Clipboard';
+        }, 2000);
+      }
+      
+      // Clear selection
+      selection.removeAllRanges();
+    }
+
+    function closePlugin() {
+      parent.postMessage({ 
+        pluginMessage: { type: 'close-plugin' } 
+      }, '*');
+    }
+
+    // Event listeners
+    downloadBtn.addEventListener('click', downloadJSON);
+    copyBtn.addEventListener('click', copyToClipboard);
+    retryBtn.addEventListener('click', retryExport);
+  </script>
+</body>
+</html>
