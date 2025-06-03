@@ -334,24 +334,23 @@ async function exportCollections() {
           }
         } else if (style.lineHeight && style.lineHeight !== figma.mixed && typeof style.lineHeight === 'object') {
           if (style.lineHeight.unit === "PERCENT") {
-            const percentValue = style.lineHeight.value;
+            const percentValue = Math.round(style.lineHeight.value); // Round to nearest integer
             
             // Try to match with core.font.lineheight values
             const coreLineHeightMap = {
-              100: "{core.font.lineheight.tight}",
-              110: "{core.font.lineheight.snug}",
-              125: "{core.font.lineheight.normal}",
-              150: "{core.font.lineheight.relaxed}",
-              175: "{core.font.lineheight.loose}",
-              200: "{core.font.lineheight.extra-loose}"
+              125: "{core.font.lineheight.sm}",
+              150: "{core.font.lineheight.md}",
+              180: "{core.font.lineheight.lg}"
             };
             
-            // Check if the value matches a core lineheight
+            // Check if the rounded value matches a core lineheight
             if (coreLineHeightMap[percentValue]) {
               lineHeight = coreLineHeightMap[percentValue];
+              console.log(`Mapped lineHeight ${style.lineHeight.value}% → ${percentValue}% → ${coreLineHeightMap[percentValue]}`);
             } else {
               // Use percentage format if no match
               lineHeight = `${percentValue}%`;
+              console.log(`No mapping found for lineHeight ${style.lineHeight.value}% → ${percentValue}%`);
             }
           } else if (style.lineHeight.unit === "PIXELS") {
             lineHeight = `${style.lineHeight.value}px`;
