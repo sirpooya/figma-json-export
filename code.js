@@ -28,6 +28,29 @@ async function exportCollections() {
     textStyleCount = textStyles.length;
     effectStyleCount = effectStyles.length;
     
+    // Get all variables once for all style processing
+    let allVariables = [];
+    try {
+      if (figma.variables && figma.variables.getLocalVariablesAsync) {
+        allVariables = await figma.variables.getLocalVariablesAsync();
+        console.log(`Loaded ${allVariables.length} variables for style processing`);
+      }
+    } catch (error) {
+      console.log('Could not load variables for style processing:', error);
+    }
+    
+    // Debug: Log what we found
+    console.log('=== STYLE DEBUGGING ===');
+    console.log('Color styles found:', colorStyleCount);
+    console.log('Text styles found:', textStyleCount);
+    console.log('Effect styles found:', effectStyleCount);
+    
+    if (colorStyleCount > 0) {
+      console.log('First color style:', colorStyles[0]);
+      console.log('First color style name:', colorStyles[0].name);
+      console.log('First color style paints:', colorStyles[0].paints);
+    }
+    
     // Process variables (if available)
     if (collections.length > 0) {
       try {
@@ -68,9 +91,12 @@ async function exportCollections() {
 
     // Process color styles
     if (colorStyles.length > 0) {
+      console.log('Processing color styles...');
       exportData.colorStyles = {};
       
-      colorStyles.forEach(style => {
+      colorStyles.forEach((style, index) => {
+        console.log(`Processing color style ${index + 1}:`, style.name);
+        
         const pathParts = style.name.split('/');
         let current = exportData.colorStyles;
         
@@ -82,27 +108,149 @@ async function exportCollections() {
         const finalKey = pathParts[pathParts.length - 1];
         const paint = style.paints[0];
         
-        if (paint && paint.type === 'SOLID') {
-          const r = Math.round(paint.color.r * 255);
-          const g = Math.round(paint.color.g * 255);
-          const b = Math.round(paint.color.b * 255);
-          const a = paint.opacity !== undefined ? paint.opacity : 1;
-          
-          current[finalKey] = {
-            "$type": "color",
-            "$value": a === 1 ? 
-              `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
-              `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`
-          };
+        console.log(`Paint for ${style.name}:`, paint);
+        
+        if (paint) {
+          if (paint.type === 'SOLID') {
+            // Handle solid colors
+            let colorValue;
+            
+            // Check if color is bound to a variable
+            if (paint.boundVariables && paint.boundVariables.color) {
+              // Color is bound to a variable - create reference
+              const variableId = paint.boundVariables.color.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              
+              if (boundVariable) {
+                // Create JSON path reference (convert variable name to JSON key path)
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                colorValue = `{${variablePath}}`;
+              } else {
+                // Fallback if variable not found
+                colorValue = `{variable:${variableId}}`;
+              }
+            } else {
+              // Regular color value
+              const r = Math.round(paint.color.r * 255);
+              const g = Math.round(paint.color.g * 255);
+              const b = Math.round(paint.color.b * 255);
+              const a = paint.opacity !== undefined ? paint.opacity : 1;
+              
+              colorValue = a === 1 ? 
+                `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
+                `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
+            }
+            
+            current[finalKey] = {
+              "$type": "color",
+              "$value": colorValue
+            };
+            
+            console.log(`Added solid color ${style.name}:`, colorValue);
+            
+          } else if (paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_RADIAL' || paint.type === 'GRADIENT_ANGULAR' || paint.type === 'GRADIENT_DIAMOND') {
+            // Handle gradients
+            const gradientStops = paint.gradientStops.map(stop => {
+              const r = Math.round(stop.color.r * 255);
+              const g = Math.round(stop.color.g * 255);
+              const b = Math.round(stop.color.b * 255);
+              const a = stop.color.a !== undefined ? stop.color.a : 1;
+              
+              // Check if color is bound to a variable
+              let colorValue;
+              if (stop.boundVariables && stop.boundVariables.color) {
+                // Color is bound to a variable - create reference
+                const variableId = stop.boundVariables.color.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                
+                if (boundVariable) {
+                  // Create JSON path reference (convert variable name to JSON key path)
+                  const variablePath = boundVariable.name.replace(/\//g, '.');
+                  colorValue = `{${variablePath}}`;
+                } else {
+                  // Fallback if variable not found
+                  colorValue = `{variable:${variableId}}`;
+                }
+              } else {
+                // Regular color value
+                colorValue = a === 1 ? 
+                  `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
+                  `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
+              }
+              
+              return {
+                color: colorValue,
+                position: Math.round(stop.position * 100) / 100 // Round to 2 decimal places
+              };
+            });
+            
+            // Calculate gradient angle from transform matrix (for linear gradients)
+            let angle = 0;
+            if (paint.type === 'GRADIENT_LINEAR' && paint.gradientTransform) {
+              const transform = paint.gradientTransform;
+              // Calculate angle from transform matrix
+              angle = Math.round(Math.atan2(transform[0][1], transform[0][0]) * 180 / Math.PI);
+              if (angle < 0) angle += 360;
+            }
+            
+            const gradientValue = {
+              type: paint.type.toLowerCase().replace('gradient_', ''),
+              stops: gradientStops
+            };
+            
+            // Add angle for linear gradients
+            if (paint.type === 'GRADIENT_LINEAR') {
+              gradientValue.angle = angle;
+            }
+            
+            current[finalKey] = {
+              "$type": "gradient",
+              "$value": gradientValue
+            };
+            
+            console.log(`Added gradient ${style.name}:`, gradientValue);
+            
+          } else if (paint.type === 'IMAGE') {
+            // Handle image fills
+            current[finalKey] = {
+              "$type": "image",
+              "$value": {
+                type: "image",
+                scaleMode: paint.scaleMode || "FILL"
+              }
+            };
+            
+            console.log(`Added image fill ${style.name}`);
+            
+          } else {
+            // Handle other paint types
+            current[finalKey] = {
+              "$type": "paint",
+              "$value": {
+                type: paint.type.toLowerCase(),
+                description: `Unsupported paint type: ${paint.type}`
+              }
+            };
+            
+            console.log(`Added unsupported paint type ${style.name}: ${paint.type}`);
+          }
+        } else {
+          console.log(`Skipped ${style.name} - no paint found`);
         }
       });
+      console.log('Final colorStyles object:', exportData.colorStyles);
+    } else {
+      console.log('No color styles found to process');
     }
 
     // Process text styles
     if (textStyles.length > 0) {
+      console.log('Processing text styles...');
       exportData.textStyles = {};
       
-      textStyles.forEach(style => {
+      textStyles.forEach((style, index) => {
+        console.log(`Processing text style ${index + 1}:`, style.name);
+        
         const pathParts = style.name.split('/');
         let current = exportData.textStyles;
         
@@ -112,22 +260,137 @@ async function exportCollections() {
         }
         
         const finalKey = pathParts[pathParts.length - 1];
+        
+        // Handle font family
+        let fontFamily = style.fontName.family;
+        if (style.boundVariables && style.boundVariables.fontFamily) {
+          const variableId = style.boundVariables.fontFamily.id;
+          const boundVariable = allVariables.find(v => v.id === variableId);
+          if (boundVariable) {
+            const variablePath = boundVariable.name.replace(/\//g, '.');
+            fontFamily = `{${variablePath}}`;
+          } else {
+            fontFamily = `{variable:${variableId}}`;
+          }
+        }
+        
+        // Handle font weight
+        let fontWeight = style.fontName.style;
+        if (style.boundVariables && style.boundVariables.fontWeight) {
+          const variableId = style.boundVariables.fontWeight.id;
+          const boundVariable = allVariables.find(v => v.id === variableId);
+          if (boundVariable) {
+            const variablePath = boundVariable.name.replace(/\//g, '.');
+            fontWeight = `{${variablePath}}`;
+          } else {
+            fontWeight = `{variable:${variableId}}`;
+          }
+        }
+        
+        // Handle font size
+        let fontSize = style.fontSize;
+        if (style.boundVariables && style.boundVariables.fontSize) {
+          const variableId = style.boundVariables.fontSize.id;
+          const boundVariable = allVariables.find(v => v.id === variableId);
+          if (boundVariable) {
+            const variablePath = boundVariable.name.replace(/\//g, '.');
+            fontSize = `{${variablePath}}`;
+          } else {
+            fontSize = `{variable:${variableId}}`;
+          }
+        }
+        
+        // Handle letter spacing
+        let letterSpacing = "0";
+        if (style.boundVariables && style.boundVariables.letterSpacing) {
+          const variableId = style.boundVariables.letterSpacing.id;
+          const boundVariable = allVariables.find(v => v.id === variableId);
+          if (boundVariable) {
+            const variablePath = boundVariable.name.replace(/\//g, '.');
+            letterSpacing = `{${variablePath}}`;
+          } else {
+            letterSpacing = `{variable:${variableId}}`;
+          }
+        } else if (style.letterSpacing && style.letterSpacing !== figma.mixed) {
+          if (style.letterSpacing.unit === "PERCENT") {
+            letterSpacing = style.letterSpacing.value.toString();
+          } else if (style.letterSpacing.unit === "PIXELS") {
+            letterSpacing = `${style.letterSpacing.value}px`;
+          } else {
+            letterSpacing = style.letterSpacing.value.toString();
+          }
+        }
+        
+        // Handle line height with core.font.lineheight matching
+        let lineHeight = "normal";
+        if (style.boundVariables && style.boundVariables.lineHeight) {
+          const variableId = style.boundVariables.lineHeight.id;
+          const boundVariable = allVariables.find(v => v.id === variableId);
+          if (boundVariable) {
+            const variablePath = boundVariable.name.replace(/\//g, '.');
+            lineHeight = `{${variablePath}}`;
+          } else {
+            lineHeight = `{variable:${variableId}}`;
+          }
+        } else if (style.lineHeight && style.lineHeight !== figma.mixed && typeof style.lineHeight === 'object') {
+          if (style.lineHeight.unit === "PERCENT") {
+            const percentValue = style.lineHeight.value;
+            
+            // Try to match with core.font.lineheight values
+            const coreLineHeightMap = {
+              100: "{core.font.lineheight.tight}",
+              110: "{core.font.lineheight.snug}",
+              125: "{core.font.lineheight.normal}",
+              150: "{core.font.lineheight.relaxed}",
+              175: "{core.font.lineheight.loose}",
+              200: "{core.font.lineheight.extra-loose}"
+            };
+            
+            // Check if the value matches a core lineheight
+            if (coreLineHeightMap[percentValue]) {
+              lineHeight = coreLineHeightMap[percentValue];
+            } else {
+              // Use percentage format if no match
+              lineHeight = `${percentValue}%`;
+            }
+          } else if (style.lineHeight.unit === "PIXELS") {
+            lineHeight = `${style.lineHeight.value}px`;
+          } else {
+            lineHeight = style.lineHeight.value.toString();
+          }
+        } else if (typeof style.lineHeight === "number") {
+          // Handle unitless line-height values
+          lineHeight = style.lineHeight.toString();
+        }
+        
+        const textStyleValue = {
+          "fontFamily": fontFamily,
+          "fontWeight": fontWeight,
+          "fontSize": fontSize,
+          "letterSpacing": letterSpacing,
+          "lineHeight": lineHeight
+        };
+        
         current[finalKey] = {
           "$type": "typography",
-          "$value": {
-            "fontFamily": style.fontName.family,
-            "fontWeight": style.fontName.style,
-            "fontSize": style.fontSize
-          }
+          "$value": textStyleValue
         };
+        
+        console.log(`Added text style ${style.name}:`, textStyleValue);
       });
+      console.log('Final textStyles object:', exportData.textStyles);
+    } else {
+      console.log('No text styles found to process');
     }
 
     // Process effect styles
     if (effectStyles.length > 0) {
+      console.log('Processing effect styles...');
       exportData.effectStyles = {};
       
-      effectStyles.forEach(style => {
+      effectStyles.forEach((style, index) => {
+        console.log(`Processing effect style ${index + 1}:`, style.name);
+        
         const pathParts = style.name.split('/');
         let current = exportData.effectStyles;
         
@@ -142,25 +405,132 @@ async function exportCollections() {
         const effects = style.effects;
         if (effects && effects.length > 0) {
           const effect = effects[0]; // Take first effect
+          
           if (effect.type === 'DROP_SHADOW' || effect.type === 'INNER_SHADOW') {
+            // Handle shadow color with variable binding
+            let shadowColor;
+            if (effect.boundVariables && effect.boundVariables.color) {
+              const variableId = effect.boundVariables.color.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                shadowColor = `{${variablePath}}`;
+              } else {
+                shadowColor = `{variable:${variableId}}`;
+              }
+            } else {
+              // Regular color value
+              const r = Math.round(effect.color.r * 255);
+              const g = Math.round(effect.color.g * 255);
+              const b = Math.round(effect.color.b * 255);
+              const a = effect.color.a !== undefined ? effect.color.a : 1;
+              shadowColor = a === 1 ? 
+                `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
+                `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
+            }
+            
+            // Handle other shadow properties with potential variable bindings
+            let offsetX = `${effect.offset.x}px`;
+            if (effect.boundVariables && effect.boundVariables.offsetX) {
+              const variableId = effect.boundVariables.offsetX.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                offsetX = `{${variablePath}}`;
+              }
+            }
+            
+            let offsetY = `${effect.offset.y}px`;
+            if (effect.boundVariables && effect.boundVariables.offsetY) {
+              const variableId = effect.boundVariables.offsetY.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                offsetY = `{${variablePath}}`;
+              }
+            }
+            
+            let blur = `${effect.radius}px`;
+            if (effect.boundVariables && effect.boundVariables.radius) {
+              const variableId = effect.boundVariables.radius.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                blur = `{${variablePath}}`;
+              }
+            }
+            
+            let spread = `${effect.spread || 0}px`;
+            if (effect.boundVariables && effect.boundVariables.spread) {
+              const variableId = effect.boundVariables.spread.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                spread = `{${variablePath}}`;
+              }
+            }
+            
             current[finalKey] = {
               "$type": "shadow",
               "$value": {
-                "color": `rgba(${Math.round(effect.color.r * 255)}, ${Math.round(effect.color.g * 255)}, ${Math.round(effect.color.b * 255)}, ${effect.color.a})`,
-                "offsetX": `${effect.offset.x}px`,
-                "offsetY": `${effect.offset.y}px`,
-                "blur": `${effect.radius}px`,
-                "spread": `${effect.spread || 0}px`
+                "type": effect.type.toLowerCase().replace('_', '-'),
+                "color": shadowColor,
+                "offsetX": offsetX,
+                "offsetY": offsetY,
+                "blur": blur,
+                "spread": spread
               }
             };
-          } else {
+            
+            console.log(`Added shadow effect ${style.name}`);
+            
+          } else if (effect.type === 'LAYER_BLUR' || effect.type === 'BACKGROUND_BLUR') {
+            // Handle blur effects
+            let blurRadius = `${effect.radius}px`;
+            if (effect.boundVariables && effect.boundVariables.radius) {
+              const variableId = effect.boundVariables.radius.id;
+              const boundVariable = allVariables.find(v => v.id === variableId);
+              if (boundVariable) {
+                const variablePath = boundVariable.name.replace(/\//g, '.');
+                blurRadius = `{${variablePath}}`;
+              }
+            }
+            
             current[finalKey] = {
-              "$type": "shadow",
-              "$value": "effect-placeholder"
+              "$type": "blur",
+              "$value": {
+                "type": effect.type.toLowerCase().replace('_', '-'),
+                "radius": blurRadius
+              }
             };
+            
+            console.log(`Added blur effect ${style.name}`);
+            
+          } else {
+            // Handle other effect types
+            current[finalKey] = {
+              "$type": "effect",
+              "$value": {
+                "type": effect.type.toLowerCase(),
+                "description": `Effect type: ${effect.type}`
+              }
+            };
+            
+            console.log(`Added generic effect ${style.name}: ${effect.type}`);
           }
+        } else {
+          // Fallback for effects without proper data
+          current[finalKey] = {
+            "$type": "effect",
+            "$value": "effect-placeholder"
+          };
+          
+          console.log(`Added placeholder effect ${style.name}`);
         }
       });
+      console.log('Final effectStyles object:', exportData.effectStyles);
+    } else {
+      console.log('No effect styles found to process');
     }
 
     // Send to UI
@@ -177,9 +547,12 @@ async function exportCollections() {
 
     figma.notify(`Export ready: ${totalItems} items found`);
     
+    // Clean and restructure the data before sending to UI
+    const cleanedData = cleanExportData(exportData);
+    
     figma.ui.postMessage({
       type: 'export-ready',
-      data: exportData,
+      data: cleanedData,
       counts: {
         variables: variableCount,
         colorStyles: colorStyleCount,
@@ -198,7 +571,77 @@ async function exportCollections() {
   }
 }
 
-// Helper function to convert Figma variable types to design token types
+// Helper function to clean and restructure exported data
+function cleanExportData(data) {
+  const cleaned = {};
+  
+  // Keys to remove at root level
+  const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'effects', 'content'];
+  
+  // Function to clean keys in nested objects (remove leading dots)
+  function cleanKeys(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    
+    const cleanedObj = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Remove leading dot from key name
+      const cleanKey = key.startsWith('.') ? key.substring(1) : key;
+      
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // If it's a design token (has $type and $value), keep as is
+        if (value.$type && value.$value !== undefined) {
+          cleanedObj[cleanKey] = value;
+        } else {
+          // Recursively clean nested objects
+          cleanedObj[cleanKey] = cleanKeys(value);
+        }
+      } else {
+        cleanedObj[cleanKey] = value;
+      }
+    }
+    return cleanedObj;
+  }
+  
+  // Process each root key
+  for (const [rootKey, value] of Object.entries(data)) {
+    // Skip keys that should be removed
+    if (keysToRemove.includes(rootKey)) {
+      console.log(`Removing root key: ${rootKey}`);
+      continue;
+    }
+    
+    // Rename effectStyles to effects
+    if (rootKey === 'effectStyles') {
+      console.log('Renaming effectStyles to effects');
+      cleaned.effects = cleanKeys(value);
+      continue;
+    }
+    
+    // Handle textStyles - shift left (flatten one level)
+    if (rootKey === 'textStyles') {
+      console.log('Shifting textStyles left');
+      const cleanedTextStyles = cleanKeys(value);
+      // Add all textStyles properties directly to root
+      Object.assign(cleaned, cleanedTextStyles);
+      continue;
+    }
+    
+    // Handle colorStyles and other keys normally
+    if (rootKey === 'colorStyles') {
+      cleaned.colorStyles = cleanKeys(value);
+    } else {
+      // For any other keys, clean them normally
+      if (typeof value === 'object' && value !== null) {
+        cleaned[rootKey] = cleanKeys(value);
+      } else {
+        cleaned[rootKey] = value;
+      }
+    }
+  }
+  
+  console.log('Data cleaning completed');
+  return cleaned;
+}
 function getVariableType(figmaType) {
   switch (figmaType) {
     case 'COLOR':
