@@ -78,7 +78,7 @@ async function exportCollections() {
                 const finalKey = pathParts[pathParts.length - 1];
                 current[finalKey] = {
                   "$type": getVariableType(variable.resolvedType),
-                  "$value": resolveVariableValue(value, variable.name)
+                  "$value": resolveVariableValue(value, variable.name, allVariables)
                 };
               }
             }
@@ -657,10 +657,17 @@ function getVariableType(figmaType) {
 }
 
 // Helper function to resolve variable values and format colors
-function resolveVariableValue(value, variableName) {
+function resolveVariableValue(value, currentVariableName, allVariables = []) {
   if (typeof value === 'object' && value !== null) {
     if (value.type === 'VARIABLE_ALIAS') {
-      return `{${variableName}}`;
+      // Find the actual variable being referenced
+      const referencedVariable = allVariables.find(v => v.id === value.id);
+      if (referencedVariable) {
+        return `{${referencedVariable.name.replace(/\//g, '.')}}`;
+      } else {
+        // Fallback to the alias ID if variable not found
+        return `{variable:${value.id}}`;
+      }
     }
     
     if (value.r !== undefined && value.g !== undefined && value.b !== undefined) {
