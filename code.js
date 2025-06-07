@@ -577,6 +577,12 @@ function cleanExportData(data) {
   // Keys to remove at root level
   const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'effects', 'content'];
   
+  // Keys to group into new objects
+  const modeKeys = ['Light', 'Dark'];
+  const themeKeys = ['Shop', 'Commercial', 'Plus', 'AI', 'Gold', 'Fresh', 'Pharmacy', 'Jet', 'Fidibo', 'Digipay', 'Mehr', 'Magnet', 'Shop New'];
+  const deviceKeys = ['Mobile', 'Desktop'];
+  const styleKeys = ['Product', 'Marketing'];
+  
   // Function to clean keys in nested objects (remove leading dots)
   function cleanKeys(obj) {
     if (!obj || typeof obj !== 'object') return obj;
@@ -584,11 +590,15 @@ function cleanExportData(data) {
     const cleanedObj = {};
     for (const [key, value] of Object.entries(obj)) {
       // Remove leading dot from key name
-      const cleanKey = key.startsWith('.') ? key.substring(1) : key;
+      let cleanKey = key.startsWith('.') ? key.substring(1) : key;
       
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         // If it's a design token (has $type and $value), keep as is
         if (value.$type && value.$value !== undefined) {
+          // Special handling for typography tokens - clean the key name
+          if (value.$type === 'typography') {
+            cleanKey = cleanTypographyKeyName(cleanKey);
+          }
           cleanedObj[cleanKey] = value;
         } else {
           // Recursively clean nested objects
@@ -601,11 +611,100 @@ function cleanExportData(data) {
     return cleanedObj;
   }
   
+  // Function to clean typography key names - remove content in parentheses after space
+  function cleanTypographyKeyName(keyName) {
+    // Remove anything after space that's in parentheses like "display-3 (32,48)" -> "display-3"
+    const cleaned = keyName.replace(/\s+\([^)]*\)/g, '');
+    if (cleaned !== keyName) {
+      console.log(`Cleaned typography key: "${keyName}" -> "${cleaned}"`);
+    }
+    return cleaned;
+  }
+  
+  // Function to shift left specific third-level objects
+  function shiftLeftSpecificObjects(obj, objectsToShift) {
+    const result = {};
+    
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        const processedValue = {};
+        
+        // Check each property in this object
+        for (const [childKey, childValue] of Object.entries(value)) {
+          if (objectsToShift.includes(childKey) && typeof childValue === 'object' && childValue !== null) {
+            // If this is an object we want to shift left, merge its contents directly
+            console.log(`Shifting left: ${key}.${childKey} content directly to ${key} level`);
+            Object.assign(processedValue, childValue);
+          } else {
+            // Keep other properties as they are
+            processedValue[childKey] = childValue;
+          }
+        }
+        
+        result[key] = processedValue;
+      } else {
+        result[key] = value;
+      }
+    }
+    
+    return result;
+  }
+  
+  // Initialize grouped objects
+  const mode = {};
+  const theme = {};
+  const device = {};
+  const style = {};
+  const core = {};
+  
   // Process each root key
   for (const [rootKey, value] of Object.entries(data)) {
     // Skip keys that should be removed
     if (keysToRemove.includes(rootKey)) {
       console.log(`Removing root key: ${rootKey}`);
+      continue;
+    }
+    
+    // Group mode keys (Light, Dark)
+    if (modeKeys.includes(rootKey)) {
+      console.log(`Grouping ${rootKey} into mode.${rootKey.toLowerCase()}`);
+      mode[rootKey.toLowerCase()] = cleanKeys(value);
+      continue;
+    }
+    
+    // Group theme keys
+    if (themeKeys.includes(rootKey)) {
+      console.log(`Grouping ${rootKey} into theme.${rootKey.toLowerCase().replace(' ', '-')}`);
+      const themeKey = rootKey.toLowerCase().replace(' ', '-').replace(' ', '');
+      theme[themeKey] = cleanKeys(value);
+      continue;
+    }
+    
+    // Group device keys
+    if (deviceKeys.includes(rootKey)) {
+      console.log(`Grouping ${rootKey} into device.${rootKey.toLowerCase()}`);
+      device[rootKey.toLowerCase()] = cleanKeys(value);
+      continue;
+    }
+    
+    // Group style keys
+    if (styleKeys.includes(rootKey)) {
+      console.log(`Grouping ${rootKey} into style.${rootKey.toLowerCase()}`);
+      style[rootKey.toLowerCase()] = cleanKeys(value);
+      continue;
+    }
+    
+    // Handle colorStyles - add to existing core object as gradients
+    if (rootKey === 'colorStyles') {
+      console.log('Adding colorStyles to core.gradients');
+      core.gradients = cleanKeys(value);
+      continue;
+    }
+    
+    // Handle existing core key - preserve it
+    if (rootKey === 'core') {
+      console.log('Preserving existing core object');
+      Object.assign(core, cleanKeys(value));
       continue;
     }
     
@@ -625,17 +724,37 @@ function cleanExportData(data) {
       continue;
     }
     
-    // Handle colorStyles and other keys normally
-    if (rootKey === 'colorStyles') {
-      cleaned.colorStyles = cleanKeys(value);
+    // Handle other keys normally
+    if (typeof value === 'object' && value !== null) {
+      cleaned[rootKey] = cleanKeys(value);
     } else {
-      // For any other keys, clean them normally
-      if (typeof value === 'object' && value !== null) {
-        cleaned[rootKey] = cleanKeys(value);
-      } else {
-        cleaned[rootKey] = value;
-      }
+      cleaned[rootKey] = value;
     }
+  }
+  
+  // Add grouped objects to cleaned data (only if they have content)
+  if (Object.keys(mode).length > 0) {
+    // Shift left third-level "mode" objects under mode.dark and mode.light
+    const processedMode = shiftLeftSpecificObjects(mode, ['mode']);
+    cleaned.mode = processedMode;
+  }
+  
+  if (Object.keys(theme).length > 0) {
+    cleaned.theme = theme;
+  }
+  
+  if (Object.keys(device).length > 0) {
+    cleaned.device = device;
+  }
+  
+  if (Object.keys(style).length > 0) {
+    // Shift left third-level "style" objects under style.product and style.marketing
+    const processedStyle = shiftLeftSpecificObjects(style, ['style']);
+    cleaned.style = processedStyle;
+  }
+  
+  if (Object.keys(core).length > 0) {
+    cleaned.core = core;
   }
   
   console.log('Data cleaning completed');

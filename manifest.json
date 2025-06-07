@@ -1,5 +1,5 @@
 {
-  "name": "json-exporter",
+  "name": "dk-json-exporter",
   "id": "export-variables-json",
   "api": "1.0.0",
   "main": "code.js",
