@@ -694,10 +694,10 @@ function cleanExportData(data) {
       continue;
     }
     
-    // Handle colorStyles - add to existing core object as gradients
+    // Handle colorStyles - move to root as gradients
     if (rootKey === 'colorStyles') {
-      console.log('Adding colorStyles to core.gradients');
-      core.gradients = cleanKeys(value);
+      console.log('Moving colorStyles to root as gradients');
+      cleaned.gradients = cleanKeys(value);
       continue;
     }
     
@@ -738,27 +738,37 @@ function cleanExportData(data) {
     const processedMode = shiftLeftSpecificObjects(mode, ['mode']);
     cleaned.mode = processedMode;
   }
-  
+
   if (Object.keys(theme).length > 0) {
     cleaned.theme = theme;
   }
-  
+
   if (Object.keys(device).length > 0) {
     cleaned.device = device;
   }
-  
+
   if (Object.keys(style).length > 0) {
     // Shift left third-level "style" objects under style.product and style.marketing
     const processedStyle = shiftLeftSpecificObjects(style, ['style']);
     cleaned.style = processedStyle;
   }
-  
+
   if (Object.keys(core).length > 0) {
     cleaned.core = core;
   }
-  
+
+  // Reorder root keys as specified
+  const orderedCleaned = {};
+  const order = ['core', 'typography', 'theme', 'device', 'mode', 'style', 'gradients'];
+  for (const key of order) {
+    if (cleaned[key]) {
+      orderedCleaned[key] = cleaned[key];
+      delete cleaned[key];
+    }
+  }
+  Object.assign(orderedCleaned, cleaned);
   console.log('Data cleaning completed');
-  return cleaned;
+  return orderedCleaned;
 }
 function getVariableType(figmaType) {
   switch (figmaType) {
