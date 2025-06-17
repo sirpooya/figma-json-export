@@ -403,128 +403,90 @@ async function exportCollections() {
         // Process actual effects instead of placeholder
         const effects = style.effects;
         if (effects && effects.length > 0) {
-          const effect = effects[0]; // Take first effect
-          
-          if (effect.type === 'DROP_SHADOW' || effect.type === 'INNER_SHADOW') {
-            // Handle shadow color with variable binding
-            let shadowColor;
-            if (effect.boundVariables && effect.boundVariables.color) {
-              const variableId = effect.boundVariables.color.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                shadowColor = `{${variablePath}}`;
+          const effectValues = {};
+
+          effects.forEach((effect, index) => {
+            const key = `effect-${index + 1}`;
+            
+            if (effect.type === 'DROP_SHADOW' || effect.type === 'INNER_SHADOW') {
+              let shadowColor;
+              if (effect.boundVariables && effect.boundVariables.color) {
+                const variableId = effect.boundVariables.color.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                shadowColor = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
               } else {
-                shadowColor = `{variable:${variableId}}`;
+                const r = Math.round(effect.color.r * 255);
+                const g = Math.round(effect.color.g * 255);
+                const b = Math.round(effect.color.b * 255);
+                const a = effect.color.a !== undefined ? effect.color.a : 1;
+                shadowColor = a === 1 ? 
+                  `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
+                  `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
               }
+
+              let offsetX = `${effect.offset.x}px`;
+              if (effect.boundVariables && effect.boundVariables.offsetX) {
+                const variableId = effect.boundVariables.offsetX.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                offsetX = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
+              }
+
+              let offsetY = `${effect.offset.y}px`;
+              if (effect.boundVariables && effect.boundVariables.offsetY) {
+                const variableId = effect.boundVariables.offsetY.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                offsetY = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
+              }
+
+              let blur = `${effect.radius}px`;
+              if (effect.boundVariables && effect.boundVariables.radius) {
+                const variableId = effect.boundVariables.radius.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                blur = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
+              }
+
+              let spread = `${effect.spread || 0}px`;
+              if (effect.boundVariables && effect.boundVariables.spread) {
+                const variableId = effect.boundVariables.spread.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                spread = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
+              }
+
+              effectValues[key] = {
+                type: effect.type.toLowerCase().replace('_', '-'),
+                color: shadowColor,
+                offsetX,
+                offsetY,
+                blur,
+                spread
+              };
+
+            } else if (effect.type === 'LAYER_BLUR' || effect.type === 'BACKGROUND_BLUR') {
+              let blurRadius = `${effect.radius}px`;
+              if (effect.boundVariables && effect.boundVariables.radius) {
+                const variableId = effect.boundVariables.radius.id;
+                const boundVariable = allVariables.find(v => v.id === variableId);
+                blurRadius = boundVariable ? `{${boundVariable.name.replace(/\//g, '.')}}` : `{variable:${variableId}}`;
+              }
+
+              effectValues[key] = {
+                type: effect.type.toLowerCase().replace('_', '-'),
+                radius: blurRadius
+              };
+
             } else {
-              // Regular color value
-              const r = Math.round(effect.color.r * 255);
-              const g = Math.round(effect.color.g * 255);
-              const b = Math.round(effect.color.b * 255);
-              const a = effect.color.a !== undefined ? effect.color.a : 1;
-              shadowColor = a === 1 ? 
-                `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` :
-                `rgba(${r}, ${g}, ${b}, ${Math.round(a * 100) / 100})`;
+              effectValues[key] = {
+                type: effect.type.toLowerCase(),
+                description: `Effect type: ${effect.type}`
+              };
             }
-            
-            // Handle other shadow properties with potential variable bindings
-            let offsetX = `${effect.offset.x}px`;
-            if (effect.boundVariables && effect.boundVariables.offsetX) {
-              const variableId = effect.boundVariables.offsetX.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                offsetX = `{${variablePath}}`;
-              }
-            }
-            
-            let offsetY = `${effect.offset.y}px`;
-            if (effect.boundVariables && effect.boundVariables.offsetY) {
-              const variableId = effect.boundVariables.offsetY.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                offsetY = `{${variablePath}}`;
-              }
-            }
-            
-            let blur = `${effect.radius}px`;
-            if (effect.boundVariables && effect.boundVariables.radius) {
-              const variableId = effect.boundVariables.radius.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                blur = `{${variablePath}}`;
-              }
-            }
-            
-            let spread = `${effect.spread || 0}px`;
-            if (effect.boundVariables && effect.boundVariables.spread) {
-              const variableId = effect.boundVariables.spread.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                spread = `{${variablePath}}`;
-              }
-            }
-            
-            current[finalKey] = {
-              "$type": "shadow",
-              "$value": {
-                "type": effect.type.toLowerCase().replace('_', '-'),
-                "color": shadowColor,
-                "offsetX": offsetX,
-                "offsetY": offsetY,
-                "blur": blur,
-                "spread": spread
-              }
-            };
-            
-            console.log(`Added shadow effect ${style.name}`);
-            
-          } else if (effect.type === 'LAYER_BLUR' || effect.type === 'BACKGROUND_BLUR') {
-            // Handle blur effects
-            let blurRadius = `${effect.radius}px`;
-            if (effect.boundVariables && effect.boundVariables.radius) {
-              const variableId = effect.boundVariables.radius.id;
-              const boundVariable = allVariables.find(v => v.id === variableId);
-              if (boundVariable) {
-                const variablePath = boundVariable.name.replace(/\//g, '.');
-                blurRadius = `{${variablePath}}`;
-              }
-            }
-            
-            current[finalKey] = {
-              "$type": "blur",
-              "$value": {
-                "type": effect.type.toLowerCase().replace('_', '-'),
-                "radius": blurRadius
-              }
-            };
-            
-            console.log(`Added blur effect ${style.name}`);
-            
-          } else {
-            // Handle other effect types
-            current[finalKey] = {
-              "$type": "effect",
-              "$value": {
-                "type": effect.type.toLowerCase(),
-                "description": `Effect type: ${effect.type}`
-              }
-            };
-            
-            console.log(`Added generic effect ${style.name}: ${effect.type}`);
-          }
-        } else {
-          // Fallback for effects without proper data
+          });
+
           current[finalKey] = {
             "$type": "effect",
-            "$value": "effect-placeholder"
+            "$value": effectValues
           };
-          
-          console.log(`Added placeholder effect ${style.name}`);
+          console.log(`Added multiple effects for ${style.name}`);
         }
       });
       console.log('Final effectStyles object:', exportData.effectStyles);
