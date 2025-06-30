@@ -228,7 +228,7 @@
             // If outputPath is a directory, append the filename
             if (!config.outputPath.endsWith('.json')) {
               const directory = config.outputPath.endsWith('/') ? config.outputPath : config.outputPath + '/';
-              config.fullPath = directory + (config.filename || 'figma-export.json');
+              config.fullPath = directory + (config.filename || 'design-tokens.json');
             } else {
               config.fullPath = config.outputPath;
             }
@@ -243,7 +243,7 @@
         config = { 
           autoSave: false,
           outputPath: null,
-          filename: 'figma-export.json'
+          filename: 'design-tokens.json'
         }; // Fallback to manual download
       }
     }
@@ -267,7 +267,7 @@
               // Try to use the configured path as starting directory
               const pathToUse = config.fullPath || config.outputPath;
               const pathParts = pathToUse.split('/');
-              const filename = pathParts.pop() || config.filename || 'figma-export.json';
+              const filename = pathParts.pop() || config.filename || 'design-tokens.json';
               
               // If the path looks like a directory, use it as startIn
               const isDirectory = !config.outputPath.includes('.json');
@@ -275,7 +275,7 @@
               if (isDirectory) {
                 // Try to save directly with the configured directory and filename
                 fileHandle = await window.showSaveFilePicker({
-                  suggestedName: config.filename || 'figma-export.json',
+                  suggestedName: config.filename || 'design-tokens.json',
                   startIn: 'documents', // Start in Documents, user can navigate to Dropbox
                   types: [{
                     description: 'JSON files',
@@ -297,7 +297,7 @@
               console.log('Configured path not accessible, showing save dialog');
               // Fall through to regular save dialog
               fileHandle = await window.showSaveFilePicker({
-                suggestedName: config.filename || 'figma-export.json',
+                suggestedName: config.filename || 'design-tokens.json',
                 startIn: 'documents',
                 types: [{
                   description: 'JSON files',
@@ -308,7 +308,7 @@
           } else {
             // No configured path, show save dialog
             fileHandle = await window.showSaveFilePicker({
-              suggestedName: config.filename || 'figma-export.json',
+              suggestedName: config.filename || 'design-tokens.json',
               startIn: 'documents',
               types: [{
                 description: 'JSON files',
@@ -329,7 +329,7 @@
           
           const a = document.createElement('a');
           a.href = url;
-          a.setAttribute('download', config.filename || 'figma-export.json');
+          a.setAttribute('download', config.filename || 'design-tokens.json');
           a.style.display = 'none';
           document.body.appendChild(a);
           a.click();
@@ -469,7 +469,7 @@
     function downloadJSON() {
       if (!exportData) return;
       
-      const filename = (config && config.filename) ? config.filename : 'figma-export.json';
+      const filename = (config && config.filename) ? config.filename : 'design-tokens.json';
       const jsonString = JSON.stringify(exportData, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
