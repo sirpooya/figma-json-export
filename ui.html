@@ -59,6 +59,12 @@
       border: 1px solid #ffcdd2;
     }
     
+    .button-container {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
     .button {
       background: #0d99ff;
       color: white;
@@ -66,10 +72,10 @@
       padding: 12px 20px;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 500;
-      width: 100%;
-      margin-bottom: 8px;
+      flex: 1;
+      margin-bottom: 0;
     }
     
     .button:hover {
@@ -116,16 +122,48 @@
       border: 2px solid #0d99ff;
       border-radius: 4px;
       font-family: 'SF Mono', Consolas, monospace;
-      font-size: 11px;
+      font-size: 10px;
       line-height: 1.4;
       background: #ffffff;
-      color: #24292e;
+      color: #ABABAB;
       margin-bottom: 16px;
       box-sizing: border-box;
       display: block;
       overflow: auto;
-      white-space: pre;
+      white-space: pre-wrap;
       user-select: all;
+    }
+    
+    .json-key {
+      color: #027BE5;
+      font-weight: 500;
+    }
+    
+    .json-bracket {
+      color: #ABABAB;
+      font-weight: bold;
+    }
+    
+    .json-value {
+      color: #B86200;
+    }
+    
+    .json-string {
+      color: #B86200;
+    }
+    
+    .json-number {
+      color: #B86200;
+    }
+    
+    .json-boolean {
+      color: #B86200;
+      font-weight: bold;
+    }
+    
+    .json-null {
+      color: #B86200;
+      font-style: italic;
     }
     
     .json-display:focus {
@@ -174,18 +212,17 @@
       Reading variables and styles from your file.
     </div>
     
-    <button id="copy-btn" class="button secondary no-margin">Copy to Clipboard</button>
-
-    <div style="margin-bottom: 12px;"></div>
+    <div class="button-container">
+      <button id="copy-btn" class="button secondary">Copy to Clipboard</button>
+      <button id="download-btn" class="button hidden">
+        Download JSON
+      </button>
+    </div>
 
     <div id="error-status" class="status error hidden">
       <strong>Error:</strong><br>
       <span id="error-message"></span>
     </div>
-    
-    <button id="download-btn" class="button hidden no-margin">
-      Download JSON File
-    </button>
     
     <button id="retry-btn" class="button hidden">
       Retry Export
@@ -210,6 +247,23 @@
     
     let exportData = null;
     let config = null;
+
+    // Function to highlight JSON syntax
+    function highlightJSON(jsonString) {
+      return jsonString
+        // Highlight keys (property names)
+        .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+        // Highlight brackets and braces only (not commas)
+        .replace(/([{}[\]])/g, '<span class="json-bracket">$1</span>')
+        // Highlight string values
+        .replace(/:\s*"([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+        // Highlight numbers
+        .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+        // Highlight booleans
+        .replace(/:\s*(true|false)/g, ': <span class="json-boolean">$1</span>')
+        // Highlight null
+        .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>');
+    }
 
     // Load config file
     async function loadConfig() {
@@ -378,12 +432,14 @@
       let colorStyleCount = 0;
       let textStyleCount = 0;
       let effectStyleCount = 0;
+      let modeComponentCount = 0;
       
       if (counts) {
         variableCount = counts.variables || 0;
         colorStyleCount = counts.colorStyles || 0;
         textStyleCount = counts.textStyles || 0;
         effectStyleCount = counts.effectStyles || 0;
+        modeComponentCount = counts.modeComponents || 0;
       } else {
         // Fallback: count manually
         function countVariables(obj) {
@@ -425,14 +481,24 @@
         if (data.effectStyles) {
           effectStyleCount = countInStyles(data.effectStyles);
         }
+        
+        // Count mode components (keys under mode.light only)
+        if (data.mode && data.mode.light) {
+          // Count keys inside light mode only
+          for (const componentKey in data.mode.light) {
+            if (data.mode.light[componentKey] && typeof data.mode.light[componentKey] === 'object') {
+              modeComponentCount++;
+            }
+          }
+        }
       }
       
       const totalCount = variableCount + colorStyleCount + textStyleCount + effectStyleCount;
-      collectionCount.textContent = `Found: ${variableCount} variables, ${textStyleCount} texts, ${colorStyleCount} colors, ${effectStyleCount} effects.`;
+      collectionCount.textContent = `Found: ${variableCount} variables, ${textStyleCount} texts, ${colorStyleCount} colors, ${effectStyleCount} effects, ${modeComponentCount} components.`;
       
-      // Display JSON in pre element
+      // Display JSON in pre element with syntax highlighting
       const jsonString = JSON.stringify(data, null, 2);
-      jsonDisplay.textContent = jsonString;
+      jsonDisplay.innerHTML = highlightJSON(jsonString);
 
       // Try auto-save if configured
       if (config && config.autoSave) {
@@ -462,7 +528,7 @@
       retryBtn.classList.remove('hidden');
       
       // Show error in pre element
-      jsonDisplay.textContent = `Error: ${message}`;
+      jsonDisplay.innerHTML = `Error: ${message}`;
       errorMessage.textContent = message;
     }
 
@@ -491,7 +557,7 @@
       retryBtn.classList.add('hidden');
       
       // Reset display to loading state
-      jsonDisplay.textContent = 'Processing variables and styles...';
+      jsonDisplay.innerHTML = 'Processing variables and styles...';
       
       parent.postMessage({ 
         pluginMessage: { type: 'export-collections' } 

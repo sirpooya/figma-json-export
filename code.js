@@ -1,5 +1,5 @@
 // code.js - Plugin with shell script execution
-figma.showUI(__html__, { width: 400, height: 420 });
+figma.showUI(__html__, { width: 360, height: 390 });
 
 async function exportCollections() {
   try {
@@ -494,6 +494,20 @@ async function exportCollections() {
       console.log('No effect styles found to process');
     }
 
+    // Clean and restructure the data before sending to UI
+    const cleanedData = cleanExportData(exportData);
+    
+    // Count keys under mode.light only
+    let modeComponentCount = 0;
+    if (cleanedData.mode && cleanedData.mode.light) {
+      // Count keys inside light mode only
+      for (const componentKey in cleanedData.mode.light) {
+        if (cleanedData.mode.light[componentKey] && typeof cleanedData.mode.light[componentKey] === 'object') {
+          modeComponentCount++;
+        }
+      }
+    }
+    
     // Send to UI
     const totalItems = variableCount + colorStyleCount + textStyleCount + effectStyleCount;
     
@@ -508,9 +522,6 @@ async function exportCollections() {
 
     figma.notify(`Export ready: ${totalItems} items found`);
     
-    // Clean and restructure the data before sending to UI
-    const cleanedData = cleanExportData(exportData);
-    
     figma.ui.postMessage({
       type: 'export-ready',
       data: cleanedData,
@@ -518,7 +529,8 @@ async function exportCollections() {
         variables: variableCount,
         colorStyles: colorStyleCount,
         textStyles: textStyleCount,
-        effectStyles: effectStyleCount
+        effectStyles: effectStyleCount,
+        modeComponents: modeComponentCount
       }
     });
 
