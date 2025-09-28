@@ -188,9 +188,17 @@ async function exportCollections() {
             let angle = 0;
             if (paint.type === 'GRADIENT_LINEAR' && paint.gradientTransform) {
               const transform = paint.gradientTransform;
-              // Calculate angle from transform matrix
-              angle = Math.round(Math.atan2(transform[0][1], transform[0][0]) * 180 / Math.PI);
+              console.log(`Gradient transform for ${style.name}:`, transform);
+              
+              // CSS gradient angle calculation to match dev mode
+              const dx = transform[0][0];
+              const dy = transform[0][1];
+              angle = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
+              // Convert to CSS gradient angle format (0-360, clockwise from top)
+              angle = (90 - angle) % 360;
               if (angle < 0) angle += 360;
+              
+              console.log(`Calculated angle for ${style.name}: ${angle}°`);
             }
             
             const gradientValue = {
@@ -338,7 +346,7 @@ async function exportCollections() {
             
             // Try to match with core.font.lineheight values
             const coreLineHeightMap = {
-              125: "{core.font.lineheight.sm}",
+              135: "{core.font.lineheight.sm}",
               150: "{core.font.lineheight.md}",
               180: "{core.font.lineheight.lg}"
             };
@@ -549,11 +557,11 @@ function cleanExportData(data) {
   const cleaned = {};
   
   // Keys to remove at root level
-  const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'effects', 'content'];
+  const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'Theme 5', 'effects', 'content'];
   
   // Keys to group into new objects
   const modeKeys = ['Light', 'Dark'];
-  const themeKeys = ['Shop', 'Commercial', 'Plus', 'AI', 'Gold', 'Fresh', 'Pharmacy', 'Jet', 'Fidibo', 'Digipay', 'Mehr', 'Magnet', 'Shop New'];
+  const themeKeys = ['Shop', 'Commercial', 'Plus', 'AI', 'Gold', 'Fresh', 'Pharmacy', 'Jet', 'Fidibo', 'Digipay', 'Mehr', 'Digify', 'Shop Old', 'SuperApp'];
   const deviceKeys = ['Mobile', 'Desktop'];
   const styleKeys = ['Product', 'Marketing'];
   
@@ -668,10 +676,12 @@ function cleanExportData(data) {
       continue;
     }
     
-    // Handle colorStyles - move to root as gradients
+    // Handle colorStyles - move to root level directly
     if (rootKey === 'colorStyles') {
-      console.log('Moving colorStyles to root as gradients');
-      cleaned.gradients = cleanKeys(value);
+      console.log('Moving colorStyles to root level');
+      const cleanedColorStyles = cleanKeys(value);
+      // Add all colorStyles properties directly to root
+      Object.assign(cleaned, cleanedColorStyles);
       continue;
     }
     
@@ -733,7 +743,7 @@ function cleanExportData(data) {
 
   // Reorder root keys as specified
   const orderedCleaned = {};
-  const order = ['core', 'typography', 'theme', 'device', 'mode', 'style', 'gradients'];
+  const order = ['core', 'typography', 'theme', 'device', 'mode', 'style'];
   for (const key of order) {
     if (cleaned[key]) {
       orderedCleaned[key] = cleaned[key];
