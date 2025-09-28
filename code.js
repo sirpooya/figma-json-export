@@ -561,7 +561,7 @@ function cleanExportData(data) {
   
   // Keys to group into new objects
   const modeKeys = ['Light', 'Dark'];
-  const themeKeys = ['Shop', 'Commercial', 'Plus', 'AI', 'Gold', 'Fresh', 'Pharmacy', 'Jet', 'Fidibo', 'Digipay', 'Mehr', 'Digify', 'Shop Old', 'SuperApp'];
+  const themeKeys = ['Shop', 'Commercial', 'Plus', 'AI', 'Gold', 'Fresh', 'Pharmacy', 'Jet', 'Fidibo', 'Digipay', 'Mehr', 'Digify', 'Shop Old', 'Void'];
   const deviceKeys = ['Mobile', 'Desktop'];
   const styleKeys = ['Product', 'Marketing'];
   
