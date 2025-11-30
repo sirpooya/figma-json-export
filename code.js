@@ -557,7 +557,7 @@ function cleanExportData(data) {
   const cleaned = {};
   
   // Keys to remove at root level
-  const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'Theme 5', 'effects', 'content'];
+  const keysToRemove = ['IRANYekan', 'Digikala', 'IRANYekanX', 'Kahroba', 'Theme 2', 'Theme 3', 'Theme 4', 'Theme 5', 'Theme 6', 'effects', 'content'];
   
   // Keys to group into new objects
   const modeKeys = ['Light', 'Dark'];
