@@ -728,6 +728,15 @@ function cleanExportData(data) {
   }
 
   if (Object.keys(device).length > 0) {
+    // Remove nested "device" key from mobile and desktop objects
+    if (device.mobile && device.mobile.device) {
+      console.log('Removing nested "device" key from device.mobile');
+      delete device.mobile.device;
+    }
+    if (device.desktop && device.desktop.device) {
+      console.log('Removing nested "device" key from device.desktop');
+      delete device.desktop.device;
+    }
     cleaned.device = device;
   }
 
