@@ -1,5 +1,5 @@
 // code.js - Plugin with shell script execution
-figma.showUI(__html__, { width: 360, height: 390 });
+figma.showUI(__html__, { width: 360, height: 390, themeColors: true });
 
 async function exportCollections() {
   try {
